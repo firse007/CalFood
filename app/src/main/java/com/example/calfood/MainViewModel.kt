@@ -19,12 +19,11 @@ enum class AppScreen {
 
 class MainViewModel(private val userPrefs: UserPreferences) : ViewModel() {
 
-    // คำเตือน: กรุณาสร้าง API Key ใหม่และห้ามแชร์ให้ใครนะครับ
-    private val GEMINI_API_KEY = "AIzaSyCwQMW4coCLRVzaL9jmLTaFavhEltrbP1I"
+    // เรียกใช้ผ่าน BuildConfig ที่ Plugin สร้างให้จาก local.properties
+    private val GEMINI_API_KEY = BuildConfig.GEMINI_API_KEY
 
     private val generativeModel = GenerativeModel(
-        // ลองเปลี่ยนเป็น gemini-1.5-flash-latest ซึ่งมักจะเสถียรกว่าบน v1beta
-        modelName = "gemini-1.5-flash-latest",
+        modelName = "gemini-1.5-flash",
         apiKey = GEMINI_API_KEY
     )
 
@@ -104,7 +103,7 @@ class MainViewModel(private val userPrefs: UserPreferences) : ViewModel() {
             aiScanResult = null
             
             try {
-                // ย่อขนาดรูปภาพก่อนส่ง (ช่วยลดปัญหา Error และทำงานเร็วขึ้น)
+                // ย่อขนาดรูปภาพก่อนส่ง
                 val resizedBitmap = Bitmap.createScaledBitmap(bitmap, 512, 512, true)
                 
                 val prompt = "Analyze this food image. Provide ONLY the food name in Thai and estimated calories in this format: 'Name, Calories' (e.g., ข้าวมันไก่, 590)"
@@ -131,9 +130,7 @@ class MainViewModel(private val userPrefs: UserPreferences) : ViewModel() {
                     aiScanResult = Food(0, "AI ผลลัพธ์: $resultText", 0)
                 }
             } catch (e: Exception) {
-                // จัดการ Error ให้กระชับขึ้น
-                val errorMsg = if (e.message?.contains("404") == true) "ไม่พบ Model หรือ Region ไม่รองรับ" else e.message
-                aiScanResult = Food(0, "ข้อผิดพลาด: $errorMsg", 0)
+                aiScanResult = Food(0, "ข้อผิดพลาด: ${e.message}", 0)
             } finally {
                 isAnalyzing = false
             }
