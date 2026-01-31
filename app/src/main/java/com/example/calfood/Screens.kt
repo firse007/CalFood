@@ -1,5 +1,13 @@
 package com.example.calfood
 
+import android.graphics.Bitmap
+import android.graphics.ImageDecoder
+import android.net.Uri
+import android.os.Build
+import android.provider.MediaStore
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.launch
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
@@ -10,22 +18,24 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -147,13 +157,44 @@ fun CalorieTrackerApp(
     profile: UserProfile,
     totalCalories: Int,
     dailyLimit: Int,
+    advice: String,
+    isAnalyzing: Boolean,
+    aiScanResult: Food?,
     selectedFoods: List<Food>,
     onAddFood: (Food) -> Unit,
     onRemoveFood: (Food) -> Unit,
     onClearAll: () -> Unit,
     onEditProfile: () -> Unit,
-    onNavigateToSummary: () -> Unit
+    onNavigateToSummary: () -> Unit,
+    onAnalyzeImage: (Bitmap) -> Unit,
+    onClearScan: () -> Unit
 ) {
+    val context = LocalContext.current
+    
+    // Launcher สำหรับถ่ายรูป
+    val cameraLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicturePreview()
+    ) { bitmap ->
+        if (bitmap != null) {
+            onAnalyzeImage(bitmap)
+        }
+    }
+
+    // Launcher สำหรับเลือกรูปจาก Gallery
+    val galleryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let {
+            val bitmap = if (Build.VERSION.SDK_INT < 28) {
+                MediaStore.Images.Media.getBitmap(context.contentResolver, it)
+            } else {
+                val source = ImageDecoder.createSource(context.contentResolver, it)
+                ImageDecoder.decodeBitmap(source)
+            }
+            onAnalyzeImage(bitmap)
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -171,6 +212,25 @@ fun CalorieTrackerApp(
                     titleContentColor = MaterialTheme.colorScheme.primary,
                 )
             )
+        },
+        floatingActionButton = {
+            Column(horizontalAlignment = Alignment.End) {
+                // ปุ่ม Gallery
+                SmallFloatingActionButton(
+                    onClick = { galleryLauncher.launch("image/*") },
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                ) {
+                    Icon(Icons.Default.List, contentDescription = "Gallery")
+                }
+                // ปุ่มถ่ายรูป
+                FloatingActionButton(
+                    onClick = { cameraLauncher.launch() },
+                    containerColor = MaterialTheme.colorScheme.primary
+                ) {
+                    Icon(Icons.Default.Search, contentDescription = "AI Scan")
+                }
+            }
         }
     ) { innerPadding ->
         Column(
@@ -184,6 +244,7 @@ fun CalorieTrackerApp(
                 label = "cardColor"
             )
             
+            // ส่วนสรุปแคลอรี่
             Card(
                 modifier = Modifier.fillMaxWidth().animateContentSize(),
                 colors = CardDefaults.cardColors(containerColor = cardColor)
@@ -196,15 +257,67 @@ fun CalorieTrackerApp(
                         fontWeight = FontWeight.Bold,
                         color = if (totalCalories > dailyLimit) Color.Red else Color(0xFF2E7D32)
                     )
-                    if (totalCalories > dailyLimit) {
-                        Text(text = "เกินเกณฑ์ที่ร่างกายต้องการต่อวันแล้ว!", color = Color.Red, fontWeight = FontWeight.Bold)
-                    } else {
-                        Text(text = "เหลืออีก ${dailyLimit - totalCalories} kcal", fontSize = 14.sp)
+                    
+                    Spacer(modifier = Modifier.height(8.dp))
+                    
+                    // ส่วนคำแนะนำ (Advice)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color.White.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                            .padding(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.Notifications, 
+                            contentDescription = "Advice",
+                            tint = if (totalCalories > dailyLimit) Color.Red else Color(0xFF2E7D32),
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = advice,
+                            fontSize = 13.sp,
+                            fontStyle = FontStyle.Italic,
+                            lineHeight = 18.sp
+                        )
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            // แสดงผลการสแกน AI
+            AnimatedVisibility(visible = isAnalyzing || aiScanResult != null) {
+                Card(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (isAnalyzing) {
+                            CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Text("กำลังวิเคราะห์อาหารด้วย AI...")
+                        } else if (aiScanResult != null) {
+                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF2E7D32))
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(aiScanResult.name, fontWeight = FontWeight.Bold)
+                                Text("${aiScanResult.calories} kcal")
+                            }
+                            Button(onClick = { onAddFood(aiScanResult) }) {
+                                Text("เพิ่ม")
+                            }
+                            IconButton(onClick = onClearScan) {
+                                Icon(Icons.Default.Close, contentDescription = "Clear")
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
             Text(text = "เลือกอาหารที่ทาน:", fontWeight = FontWeight.Bold)
             
             LazyColumn(modifier = Modifier.weight(1f)) {
@@ -299,19 +412,38 @@ fun SummaryScreen(
                 
                 Spacer(modifier = Modifier.height(32.dp))
                 
-                Text("รายละเอียด", fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth())
+                Text("รายละเอียดและคำแนะนำรายวัน", fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth())
                 LazyColumn(modifier = Modifier.fillMaxWidth()) {
                     items(dailyRecords.reversed()) { record ->
-                        ListItem(
-                            headlineContent = { Text(record.date) },
-                            trailingContent = { 
-                                Text(
-                                    "${record.calories} kcal",
-                                    color = if (record.calories > dailyLimit) Color.Red else Color(0xFF2E7D32)
-                                )
-                            }
-                        )
-                        HorizontalDivider()
+                        val ratio = record.calories.toFloat() / dailyLimit.toFloat()
+                        val (advice, color) = when {
+                            record.calories == 0 -> "ไม่มีการบันทึกข้อมูล" to Color.Gray
+                            ratio <= 1.0 -> "ทำได้ดีมาก! ควบคุมแคลอรี่ได้ตามเป้าหมาย" to Color(0xFF2E7D32)
+                            else -> "ทานเกินเป้าหมาย! พยายามออกกำลังกายเพิ่มนะครับ" to Color.Red
+                        }
+
+                        Card(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color.White),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                        ) {
+                            ListItem(
+                                headlineContent = { Text(record.date, fontWeight = FontWeight.Bold) },
+                                supportingContent = { 
+                                    Column {
+                                        Text("แคลอรี่รวม: ${record.calories} kcal")
+                                        Text(text = advice, color = color, fontSize = 12.sp, fontStyle = FontStyle.Italic)
+                                    }
+                                },
+                                trailingContent = { 
+                                    Text(
+                                        if (ratio > 1.0) "เกินเกณฑ์" else "ปกติ",
+                                        color = if (ratio > 1.0) Color.Red else Color(0xFF2E7D32),
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -322,7 +454,7 @@ fun SummaryScreen(
 @Composable
 fun CalorieChart(records: List<DailyRecord>, dailyLimit: Int) {
     val maxCalInRecords = records.maxOfOrNull { it.calories } ?: 0
-    val maxY = maxOf(maxCalInRecords, dailyLimit).toFloat() * 1.2f
+    val maxY = maxOf(maxCalInRecords, dailyLimit).toFloat() * 1.3f
     
     var animationPlayed by remember { mutableStateOf(false) }
     val animateProgress by animateFloatAsState(
@@ -338,34 +470,68 @@ fun CalorieChart(records: List<DailyRecord>, dailyLimit: Int) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(250.dp)
-            .background(Color.White, RoundedCornerShape(8.dp))
-            .padding(16.dp)
+            .height(280.dp)
+            .background(Color.White, RoundedCornerShape(12.dp))
+            .padding(top = 32.dp, start = 16.dp, end = 16.dp, bottom = 48.dp)
     ) {
         Canvas(modifier = Modifier.fillMaxSize()) {
             val width = size.width
             val height = size.height
             val spacing = width / (records.size + 1)
             
+            // วาดเส้น Daily Limit
             val limitY = height - (dailyLimit.toFloat() / maxY * height)
             drawLine(
                 color = Color.Red.copy(alpha = 0.5f),
                 start = Offset(0f, limitY),
                 end = Offset(width, limitY),
-                strokeWidth = 2.dp.toPx()
+                strokeWidth = 1.dp.toPx()
             )
 
             records.forEachIndexed { index, record ->
                 val barHeight = (record.calories.toFloat() / maxY) * height * animateProgress
                 val x = spacing * (index + 1)
+                val barWidth = 24.dp.toPx()
                 
+                // วาดแท่งกราฟ
                 drawRect(
                     color = if (record.calories > dailyLimit) Color(0xFFFF8A80) else Color(0xFF81C784),
-                    topLeft = Offset(x - 15.dp.toPx(), height - barHeight),
-                    size = Size(30.dp.toPx(), barHeight)
+                    topLeft = Offset(x - barWidth / 2, height - barHeight),
+                    size = Size(barWidth, barHeight)
                 )
+
+                // วาดตัวเลขแคลอรี่บนแท่ง (ใช้ Android Native Canvas เพื่อวาด Text)
+                drawContext.canvas.nativeCanvas.apply {
+                    val paint = android.graphics.Paint().apply {
+                        color = android.graphics.Color.BLACK
+                        textSize = 10.sp.toPx()
+                        textAlign = android.graphics.Paint.Align.CENTER
+                    }
+                    if (animateProgress > 0.9f) {
+                        drawText(
+                            "${record.calories}",
+                            x,
+                            height - barHeight - 8.dp.toPx(),
+                            paint
+                        )
+                    }
+                }
+
+                // วาดวันที่ใต้แท่ง
+                drawContext.canvas.nativeCanvas.apply {
+                    val paint = android.graphics.Paint().apply {
+                        color = android.graphics.Color.GRAY
+                        textSize = 10.sp.toPx()
+                        textAlign = android.graphics.Paint.Align.CENTER
+                    }
+                    drawText(
+                        record.date,
+                        x,
+                        height + 20.dp.toPx(),
+                        paint
+                    )
+                }
             }
         }
     }
-    Text("เส้นสีแดงคือเป้าหมายประจำวัน ($dailyLimit kcal)", fontSize = 12.sp, color = Color.Gray)
 }

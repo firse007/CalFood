@@ -54,12 +54,17 @@ fun MainApp() {
                         profile = userProfile,
                         totalCalories = viewModel.totalCalories,
                         dailyLimit = viewModel.dailyLimit,
+                        advice = viewModel.advice,
+                        isAnalyzing = viewModel.isAnalyzing,
+                        aiScanResult = viewModel.aiScanResult,
                         selectedFoods = viewModel.selectedFoods,
                         onAddFood = viewModel::addFood,
                         onRemoveFood = viewModel::removeFood,
                         onClearAll = viewModel::clearSelectedFoods,
                         onEditProfile = viewModel::clearProfile,
-                        onNavigateToSummary = { viewModel.navigateTo(AppScreen.SUMMARY) }
+                        onNavigateToSummary = { viewModel.navigateTo(AppScreen.SUMMARY) },
+                        onAnalyzeImage = viewModel::analyzeFoodImage,
+                        onClearScan = viewModel::clearScanResult
                     )
                 }
                 AppScreen.SUMMARY -> {
