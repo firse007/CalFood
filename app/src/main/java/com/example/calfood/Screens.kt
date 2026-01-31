@@ -1,13 +1,5 @@
 package com.example.calfood
 
-import android.graphics.Bitmap
-import android.graphics.ImageDecoder
-import android.net.Uri
-import android.os.Build
-import android.provider.MediaStore
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.activity.result.launch
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
@@ -18,23 +10,24 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.nativeCanvas
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -158,43 +151,13 @@ fun CalorieTrackerApp(
     totalCalories: Int,
     dailyLimit: Int,
     advice: String,
-    isAnalyzing: Boolean,
-    aiScanResult: Food?,
     selectedFoods: List<Food>,
     onAddFood: (Food) -> Unit,
     onRemoveFood: (Food) -> Unit,
     onClearAll: () -> Unit,
     onEditProfile: () -> Unit,
-    onNavigateToSummary: () -> Unit,
-    onAnalyzeImage: (Bitmap) -> Unit,
-    onClearScan: () -> Unit
+    onNavigateToSummary: () -> Unit
 ) {
-    val context = LocalContext.current
-    
-    // Launcher สำหรับถ่ายรูป
-    val cameraLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.TakePicturePreview()
-    ) { bitmap ->
-        if (bitmap != null) {
-            onAnalyzeImage(bitmap)
-        }
-    }
-
-    // Launcher สำหรับเลือกรูปจาก Gallery
-    val galleryLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        uri?.let {
-            val bitmap = if (Build.VERSION.SDK_INT < 28) {
-                MediaStore.Images.Media.getBitmap(context.contentResolver, it)
-            } else {
-                val source = ImageDecoder.createSource(context.contentResolver, it)
-                ImageDecoder.decodeBitmap(source)
-            }
-            onAnalyzeImage(bitmap)
-        }
-    }
-
     Scaffold(
         topBar = {
             TopAppBar(
@@ -212,25 +175,6 @@ fun CalorieTrackerApp(
                     titleContentColor = MaterialTheme.colorScheme.primary,
                 )
             )
-        },
-        floatingActionButton = {
-            Column(horizontalAlignment = Alignment.End) {
-                // ปุ่ม Gallery
-                SmallFloatingActionButton(
-                    onClick = { galleryLauncher.launch("image/*") },
-                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                ) {
-                    Icon(Icons.Default.List, contentDescription = "Gallery")
-                }
-                // ปุ่มถ่ายรูป
-                FloatingActionButton(
-                    onClick = { cameraLauncher.launch() },
-                    containerColor = MaterialTheme.colorScheme.primary
-                ) {
-                    Icon(Icons.Default.Search, contentDescription = "AI Scan")
-                }
-            }
         }
     ) { innerPadding ->
         Column(
@@ -285,39 +229,7 @@ fun CalorieTrackerApp(
                 }
             }
 
-            // แสดงผลการสแกน AI
-            AnimatedVisibility(visible = isAnalyzing || aiScanResult != null) {
-                Card(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        if (isAnalyzing) {
-                            CircularProgressIndicator(modifier = Modifier.size(24.dp))
-                            Spacer(modifier = Modifier.width(16.dp))
-                            Text("กำลังวิเคราะห์อาหารด้วย AI...")
-                        } else if (aiScanResult != null) {
-                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF2E7D32))
-                            Spacer(modifier = Modifier.width(16.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(aiScanResult.name, fontWeight = FontWeight.Bold)
-                                Text("${aiScanResult.calories} kcal")
-                            }
-                            Button(onClick = { onAddFood(aiScanResult) }) {
-                                Text("เพิ่ม")
-                            }
-                            IconButton(onClick = onClearScan) {
-                                Icon(Icons.Default.Close, contentDescription = "Clear")
-                            }
-                        }
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(16.dp))
             Text(text = "เลือกอาหารที่ทาน:", fontWeight = FontWeight.Bold)
             
             LazyColumn(modifier = Modifier.weight(1f)) {

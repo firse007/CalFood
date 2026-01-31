@@ -1,15 +1,10 @@
 package com.example.calfood
 
-import android.graphics.Bitmap
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
-import com.google.ai.client.generativeai.GenerativeModel
-import com.google.ai.client.generativeai.type.content
-import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -18,14 +13,6 @@ enum class AppScreen {
 }
 
 class MainViewModel(private val userPrefs: UserPreferences) : ViewModel() {
-
-    // เรียกใช้ผ่าน BuildConfig ที่ Plugin สร้างให้จาก local.properties
-    private val GEMINI_API_KEY = BuildConfig.GEMINI_API_KEY
-
-    private val generativeModel = GenerativeModel(
-        modelName = "gemini-1.5-flash",
-        apiKey = GEMINI_API_KEY
-    )
 
     var userProfile by mutableStateOf(userPrefs.loadProfile())
         private set
@@ -36,11 +23,6 @@ class MainViewModel(private val userPrefs: UserPreferences) : ViewModel() {
     val selectedFoods = mutableStateListOf<Food>()
 
     var dailyRecords by mutableStateOf(userPrefs.loadDailyRecords())
-        private set
-
-    var isAnalyzing by mutableStateOf(false)
-        private set
-    var aiScanResult by mutableStateOf<Food?>(null)
         private set
 
     val totalCalories: Int
@@ -84,7 +66,6 @@ class MainViewModel(private val userPrefs: UserPreferences) : ViewModel() {
     fun addFood(food: Food) {
         selectedFoods.add(food)
         saveCurrentDayRecord()
-        aiScanResult = null
     }
 
     fun removeFood(food: Food) {
@@ -95,50 +76,6 @@ class MainViewModel(private val userPrefs: UserPreferences) : ViewModel() {
     fun clearSelectedFoods() {
         selectedFoods.clear()
         saveCurrentDayRecord()
-    }
-
-    fun analyzeFoodImage(bitmap: Bitmap) {
-        viewModelScope.launch {
-            isAnalyzing = true
-            aiScanResult = null
-            
-            try {
-                // ย่อขนาดรูปภาพก่อนส่ง
-                val resizedBitmap = Bitmap.createScaledBitmap(bitmap, 512, 512, true)
-                
-                val prompt = "Analyze this food image. Provide ONLY the food name in Thai and estimated calories in this format: 'Name, Calories' (e.g., ข้าวมันไก่, 590)"
-                
-                val inputContent = content {
-                    image(resizedBitmap)
-                    text(prompt)
-                }
-
-                val response = generativeModel.generateContent(inputContent)
-                val resultText = response.text ?: ""
-                
-                if (resultText.contains(",")) {
-                    val parts = resultText.split(",")
-                    val name = parts[0].trim()
-                    val calories = parts[1].filter { it.isDigit() }.toIntOrNull() ?: 0
-                    
-                    aiScanResult = Food(
-                        id = (100..999).random(),
-                        name = "$name (AI)",
-                        calories = calories
-                    )
-                } else {
-                    aiScanResult = Food(0, "AI ผลลัพธ์: $resultText", 0)
-                }
-            } catch (e: Exception) {
-                aiScanResult = Food(0, "ข้อผิดพลาด: ${e.message}", 0)
-            } finally {
-                isAnalyzing = false
-            }
-        }
-    }
-
-    fun clearScanResult() {
-        aiScanResult = null
     }
 
     private fun saveCurrentDayRecord() {
