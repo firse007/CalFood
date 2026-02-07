@@ -2,10 +2,7 @@ package com.example.calfood
 
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.LocalIndication
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.*
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -144,7 +141,7 @@ fun ProfileSetupScreen(onProfileSaved: (UserProfile) -> Unit) {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun CalorieTrackerApp(
     profile: UserProfile,
@@ -152,12 +149,19 @@ fun CalorieTrackerApp(
     dailyLimit: Int,
     advice: String,
     selectedFoods: List<Food>,
+    availableFoods: List<Food>,
     onAddFood: (Food) -> Unit,
+    onAddNewFood: (String, Int) -> Unit,
+    onUpdateFood: (Food) -> Unit,
     onRemoveFood: (Food) -> Unit,
+    onDeleteFoodFromDb: (Food) -> Unit,
     onClearAll: () -> Unit,
     onEditProfile: () -> Unit,
     onNavigateToSummary: () -> Unit
 ) {
+    var showAddDialog by remember { mutableStateOf(false) }
+    var foodToEdit by remember { mutableStateOf<Food?>(null) }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -175,6 +179,11 @@ fun CalorieTrackerApp(
                     titleContentColor = MaterialTheme.colorScheme.primary,
                 )
             )
+        },
+        floatingActionButton = {
+            FloatingActionButton(onClick = { showAddDialog = true }) {
+                Icon(Icons.Default.Add, contentDescription = "Add New Food")
+            }
         }
     ) { innerPadding ->
         Column(
@@ -230,22 +239,27 @@ fun CalorieTrackerApp(
             }
 
             Spacer(modifier = Modifier.height(16.dp))
-            Text(text = "เลือกอาหารที่ทาน:", fontWeight = FontWeight.Bold)
+            Text(text = "เลือกอาหารที่ทาน (กดค้างเพื่อแก้ไข):", fontWeight = FontWeight.Bold)
             
             LazyColumn(modifier = Modifier.weight(1f)) {
-                items(foodList) { food ->
+                items(availableFoods) { food ->
                     ListItem(
                         modifier = Modifier
-                            .bounceClick { onAddFood(food) }
+                            .combinedClickable(
+                                onClick = { onAddFood(food) },
+                                onLongClick = { foodToEdit = food }
+                            )
                             .padding(vertical = 2.dp),
                         headlineContent = { Text(food.name) },
                         supportingContent = { Text("${food.calories} kcal") },
                         trailingContent = {
-                            Icon(
-                                Icons.Default.Add, 
-                                contentDescription = "Add",
-                                tint = MaterialTheme.colorScheme.primary
-                            )
+                            IconButton(onClick = { onDeleteFoodFromDb(food) }) {
+                                Icon(
+                                    Icons.Default.Delete, 
+                                    contentDescription = "Delete from DB",
+                                    tint = Color.Gray.copy(alpha = 0.5f)
+                                )
+                            }
                         }
                     )
                     HorizontalDivider()
@@ -253,7 +267,7 @@ fun CalorieTrackerApp(
             }
 
             Spacer(modifier = Modifier.height(8.dp))
-            Text(text = "รายการวันนี้:", fontWeight = FontWeight.Bold)
+            Text(text = "รายการที่ทานวันนี้:", fontWeight = FontWeight.Bold)
             
             LazyColumn(modifier = Modifier.weight(0.7f)) {
                 items(selectedFoods) { food ->
@@ -275,15 +289,142 @@ fun CalorieTrackerApp(
                 }
             }
             
-            Button(
-                onClick = onClearAll,
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text("ล้างรายการทั้งหมด")
+                Button(
+                    onClick = onClearAll,
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("ล้างรายการทั้งหมด")
+                }
+                
+                FloatingActionButton(
+                    onClick = { showAddDialog = true },
+                    modifier = Modifier.size(48.dp), // ปรับขนาดให้พอดีกับแถวปุ่ม
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.primary
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "Add New Food")
+                }
             }
         }
     }
+
+    if (showAddDialog) {
+        AddFoodDialog(
+            onDismiss = { showAddDialog = false },
+            onConfirm = { name, cals ->
+                onAddNewFood(name, cals)
+                showAddDialog = false
+            }
+        )
+    }
+
+    if (foodToEdit != null) {
+        EditFoodDialog(
+            food = foodToEdit!!,
+            onDismiss = { foodToEdit = null },
+            onConfirm = { updatedFood ->
+                onUpdateFood(updatedFood)
+                foodToEdit = null
+            }
+        )
+    }
+}
+
+@Composable
+fun AddFoodDialog(onDismiss: () -> Unit, onConfirm: (String, Int) -> Unit) {
+    var name by remember { mutableStateOf("") }
+    var calories by remember { mutableStateOf("") }
+    val isFormValid = name.isNotBlank() && calories.isNotBlank() && calories.toIntOrNull() != null
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("เพิ่มเมนูอาหารใหม่") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("ชื่ออาหาร") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = calories,
+                    onValueChange = { calories = it },
+                    label = { Text("แคลอรี่") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val calInt = calories.toIntOrNull() ?: 0
+                    onConfirm(name, calInt)
+                },
+                enabled = isFormValid
+            ) {
+                Text("เพิ่ม")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("ยกเลิก")
+            }
+        }
+    )
+}
+
+@Composable
+fun EditFoodDialog(food: Food, onDismiss: () -> Unit, onConfirm: (Food) -> Unit) {
+    var name by remember { mutableStateOf(food.name) }
+    var calories by remember { mutableStateOf(food.calories.toString()) }
+    val isFormValid = name.isNotBlank() && calories.isNotBlank() && calories.toIntOrNull() != null
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("แก้ไขเมนูอาหาร") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("ชื่ออาหาร") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = calories,
+                    onValueChange = { calories = it },
+                    label = { Text("แคลอรี่") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val calInt = calories.toIntOrNull() ?: 0
+                    onConfirm(food.copy(name = name, calories = calInt))
+                },
+                enabled = isFormValid
+            ) {
+                Text("บันทึก")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("ยกเลิก")
+            }
+        }
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

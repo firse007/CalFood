@@ -8,33 +8,44 @@ import androidx.compose.animation.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.room.Room
 import com.example.calfood.ui.theme.CalFoodTheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        // Initialize Database
+        val db = Room.databaseBuilder(
+            applicationContext,
+            AppDatabase::class.java, "calfood-database"
+        ).fallbackToDestructiveMigration() // Simple for development
+         .build()
+        
+        val foodDao = db.foodDao()
+
         enableEdgeToEdge()
         setContent {
             CalFoodTheme {
-                MainApp()
+                MainApp(foodDao)
             }
         }
     }
 }
 
 @Composable
-fun MainApp() {
+fun MainApp(foodDao: FoodDao) {
     val context = LocalContext.current
     val viewModel: MainViewModel = viewModel(
-        factory = MainViewModelFactory(UserPreferences(context))
+        factory = MainViewModelFactory(UserPreferences(context), foodDao)
     )
 
     val userProfile = viewModel.userProfile
+    val availableFoods by viewModel.availableFoods.collectAsState()
 
     if (userProfile == null) {
         ProfileSetupScreen(onProfileSaved = viewModel::saveProfile)
     } else {
-        // อนิเมชั่นตอนเปลี่ยนหน้าจอหลัก
         AnimatedContent(
             targetState = viewModel.currentScreen,
             transitionSpec = {
@@ -56,8 +67,12 @@ fun MainApp() {
                         dailyLimit = viewModel.dailyLimit,
                         advice = viewModel.advice,
                         selectedFoods = viewModel.selectedFoods,
-                        onAddFood = viewModel::addFood,
-                        onRemoveFood = viewModel::removeFood,
+                        availableFoods = availableFoods,
+                        onAddFood = viewModel::addFoodToSelected,
+                        onAddNewFood = viewModel::addNewFoodToDatabase,
+                        onUpdateFood = viewModel::updateFoodInDatabase,
+                        onRemoveFood = viewModel::removeFoodFromSelected,
+                        onDeleteFoodFromDb = viewModel::deleteFoodFromDatabase,
                         onClearAll = viewModel::clearSelectedFoods,
                         onEditProfile = viewModel::clearProfile,
                         onNavigateToSummary = { viewModel.navigateTo(AppScreen.SUMMARY) }
@@ -75,9 +90,12 @@ fun MainApp() {
     }
 }
 
-class MainViewModelFactory(private val userPrefs: UserPreferences) : androidx.lifecycle.ViewModelProvider.Factory {
+class MainViewModelFactory(
+    private val userPrefs: UserPreferences,
+    private val foodDao: FoodDao
+) : androidx.lifecycle.ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
-        return MainViewModel(userPrefs) as T
+        return MainViewModel(userPrefs, foodDao) as T
     }
 }
